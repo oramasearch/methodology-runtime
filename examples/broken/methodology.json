@@ -1,0 +1,10 @@
+{
+  "interface": 1,
+  "name": "Broken example",
+  "description": "Missing score() and an unpinned lock line: Validate reports both.",
+  "entrypoint": "methodology.py",
+  "inputs": {"kinds": ["tabular"], "target": {"required": true, "kind": "binary"}, "required_features": []},
+  "parameters": [{"name": "threshold", "kind": "float", "default": 0.5, "minimum": 0, "maximum": 1}],
+  "metrics": ["accuracy"],
+  "packages": "requirements.lock"
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# install-locked <methodology directory> [lock file]: pip install --require-hashes --no-deps
+# --only-binary=:all: into <directory>/.packages. Used by a methodology's image build.
+set -eu
+exec "$(dirname -- "$0")/methodology" install-locked "$@"
