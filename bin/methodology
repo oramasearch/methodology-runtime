@@ -1,0 +1,8 @@
+#!/bin/sh
+# The methodology command. In the image this is /opt/orama/bin/methodology and the package sits in
+# /opt/orama/lib; in a checkout the package sits at the repository root. PYTHONPATH is set here,
+# never inherited, and -s ignores user site-packages.
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -d "$root/lib/orama_methodology" ]; then lib="$root/lib"; else lib="$root"; fi
+PYTHONPATH="$lib" exec python3 -s -m orama_methodology "$@"

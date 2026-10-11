@@ -1,0 +1,20 @@
+{
+  "interface": 1,
+  "name": "Logistic regression (standard library)",
+  "description": "Binary classification by logistic regression, trained with batch gradient descent on standardized numeric features. Standard library only.",
+  "entrypoint": "methodology.py",
+  "inputs": {
+    "kinds": ["tabular"],
+    "target": {"required": true, "kind": "binary"},
+    "required_features": []
+  },
+  "parameters": [
+    {"name": "learning_rate", "kind": "float", "default": 0.5, "minimum": 0.001, "maximum": 5, "log": true},
+    {"name": "epochs", "kind": "int", "default": 200, "minimum": 1, "maximum": 5000},
+    {"name": "l2", "kind": "float", "default": 0.0, "minimum": 0, "maximum": 10}
+  ],
+  "metrics": ["auc", "accuracy", "log_loss"],
+  "explain": true,
+  "packages": "requirements.lock",
+  "resources": {"cpu": "1", "memory": "1Gi", "gpu": 0, "timeout_seconds": 1800}
+}
