@@ -6,8 +6,20 @@ from pathlib import Path
 
 from orama_methodology import USER_AGENT
 from orama_methodology.cli import main
-from orama_methodology.transfer import MAX_ARTIFACT_BYTES, LakeClient, TransferError, collect, output_body, stage
-from tests.fake_lake import CREDENTIAL, FakeLake
+import hashlib
+from unittest import mock
+
+from orama_methodology import transfer
+from orama_methodology.transfer import (
+    MAX_ARTIFACT_BYTES,
+    LakeClient,
+    TransferError,
+    collect,
+    output_body,
+    stage,
+    stage_model,
+)
+from tests.fake_lake import CREDENTIAL, DEPLOYMENT_CREDENTIAL, FakeLake
 from tests.support import GOOD, manifest, rows
 
 SPEC = {
@@ -119,6 +131,90 @@ class CollectTests(unittest.TestCase):
             self.assertNotIn("artifact_base64", body)
             self.assertEqual(body["result"]["status"], "failed")
             self.assertEqual(body["result"]["findings"][-1]["check"], "run.artifact_size")
+
+
+class ChunkedArtifactTests(unittest.TestCase):
+    """An artifact over the inline limit is sent in chunks before the output (lake#690)."""
+
+    def _out(self, directory: Path, artifact: bytes) -> Path:
+        out = directory / "out"
+        out.mkdir()
+        (out / "result.json").write_text(json.dumps({"status": "ok", "findings": [], "metrics": {}}))
+        (out / "artifact.bin").write_bytes(artifact)
+        return out
+
+    def test_a_large_artifact_goes_in_ordered_chunks_and_the_output_names_its_digest(self):
+        artifact = bytes(range(256)) * 41  # 10,496 bytes
+        with mock.patch.object(transfer, "INLINE_ARTIFACT_BYTES", 1000), \
+                mock.patch.object(transfer, "ARTIFACT_CHUNK_BYTES", 4000), \
+                FakeLake(SPEC, []) as lake, tempfile.TemporaryDirectory() as directory:
+            out = self._out(Path(directory), artifact)
+            collect(LakeClient(lake.url, CREDENTIAL, no_sleep), SPEC["run_id"], out)
+            chunks = [body for path, _, body in lake.requests if path == "/v1/methodology_run_artifact"]
+            self.assertEqual([body["offset"] for body in chunks], [0, 4000, 8000])
+            self.assertEqual(bytes(lake.artifact), artifact)
+            body = lake.outputs[0]
+            self.assertNotIn("artifact_base64", body)
+            self.assertEqual(body["artifact"], {"bytes": len(artifact), "sha256": hashlib.sha256(artifact).hexdigest()})
+
+    def test_an_artifact_at_the_inline_limit_is_still_inline(self):
+        with mock.patch.object(transfer, "INLINE_ARTIFACT_BYTES", 10), tempfile.TemporaryDirectory() as directory:
+            body = output_body(SPEC["run_id"], self._out(Path(directory), b"0123456789"))
+            self.assertIn("artifact_base64", body)
+            self.assertNotIn("artifact", body)
+
+    def test_a_chunk_lake_did_not_take_fails_collect(self):
+        class Short:
+            def call(self, capability, body):
+                return {"received": 1}
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifact.bin"
+            path.write_bytes(b"abcdef")
+            with self.assertRaises(TransferError):
+                transfer.send_artifact(Short(), SPEC["run_id"], path, chunk_bytes=3)
+
+
+MODEL_SPEC = {
+    "interface": 1,
+    "deployment_id": "00000000-0000-4000-8000-0000000000d1",
+    "model_id": "model-1",
+    "methodology_id": "W-0123abcd",
+    "artifact_format": "bytes",
+    "features": ["tenure"],
+    "network": False,
+}
+
+
+class StageModelTests(unittest.TestCase):
+    def test_stage_model_pages_the_artifact_and_checks_its_digest(self):
+        artifact = b"weights" * 1000
+        model = {"spec": MODEL_SPEC, "artifact": artifact}
+        with FakeLake(SPEC, [], model=model) as lake, tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "model"
+            client = LakeClient(lake.url, DEPLOYMENT_CREDENTIAL, no_sleep)
+            summary = stage_model(client, MODEL_SPEC["deployment_id"], out, limit=3000)
+            self.assertEqual(summary, {"bytes": len(artifact), "model_id": "model-1"})
+            self.assertEqual((out / "artifact.bin").read_bytes(), artifact)
+            self.assertEqual(json.loads((out / "spec.json").read_text()), MODEL_SPEC)
+            offsets = [body["offset"] for _, _, body in lake.requests]
+            self.assertEqual(offsets, [0, 3000, 6000])
+
+    def test_a_wrong_digest_leaves_no_artifact(self):
+        model = {"spec": MODEL_SPEC, "artifact": b"weights", "sha256": "0" * 64}
+        with FakeLake(SPEC, [], model=model) as lake, tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "model"
+            with self.assertRaises(TransferError):
+                stage_model(LakeClient(lake.url, DEPLOYMENT_CREDENTIAL, no_sleep), MODEL_SPEC["deployment_id"], out)
+            self.assertFalse((out / "artifact.bin").exists())
+            self.assertFalse((out / "artifact.bin.partial").exists())
+
+    def test_a_run_credential_does_not_reach_a_deployment(self):
+        model = {"spec": MODEL_SPEC, "artifact": b"weights"}
+        with FakeLake(SPEC, [], model=model) as lake, tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(TransferError) as raised:
+                stage_model(LakeClient(lake.url, CREDENTIAL, no_sleep), MODEL_SPEC["deployment_id"], Path(directory))
+            self.assertEqual(raised.exception.status, 401)
 
 
 class EndToEndTests(unittest.TestCase):

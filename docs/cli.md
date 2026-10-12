@@ -10,11 +10,13 @@ import. The image runs as uid 10001, working directory `/work`.
 |---|---|---|
 | `methodology stage --lake URL --run ID --credential-file /var/run/orama/credential --out /work/in [--limit 5000]` | stage pod | pages the run's input from Lake |
 | `methodology run --in /work/in --out /work/out --source /methodology` | run pod | checks the sandbox, runs the methodology |
-| `methodology collect --lake URL --run ID --credential-file /var/run/orama/credential --in /work/out [--run-exit-code N]` | collect pod | posts the result once |
+| `methodology collect --lake URL --run ID --credential-file /var/run/orama/credential --in /work/out [--run-exit-code N]` | collect pod | posts the result once (a large artifact in chunks first) |
+| `methodology stage-model --lake URL --deployment ID --credential-file /var/run/orama/credential --out /work/model` | a model deployment's stage pod | pages the model's artifact from Lake (lake#690) |
+| `methodology serve --model /work/model --source /methodology --port 8080` | a model deployment's serve pod | checks the sandbox, loads the model, answers predictions (lake#690) |
 | `methodology validate-manifest [DIR]` | anywhere | checks a methodology directory's manifest, lock file and entrypoint, without data |
 | `install-locked [DIR] [LOCK]` (= `methodology install-locked`) | image build | installs the lock file into `DIR/.packages` |
 
-`--lake` and `--run` default to `LAKE_URL` and `RUN_ID` from the environment (set only on the stage
+`--lake`, `--run` and `--deployment` default to `LAKE_URL`, `RUN_ID` and `DEPLOYMENT_ID` from the environment (set only on the stage
 and collect pods; the run pod would refuse `LAKE_URL`). `--lake` is Lake's in-cluster URL, the one
 `LAKE_INTERNAL_URL` names.
 
@@ -26,7 +28,12 @@ and collect pods; the run pod would refuse `LAKE_URL`). `--lake` is Lake's in-cl
 | 1 | `run`: the methodology failed a check or raised; `validate-manifest`/`install-locked`: invalid |
 | 2 | `run`: the bundle is incomplete (no readable `spec.json` or `data.jsonl`, unknown mode); usage error |
 | 3 | `run`: the sandbox check refused the run; the code was not imported |
-| 4 | `stage`/`collect`: Lake refused or could not be reached after retries |
+| 4 | `stage`/`collect`/`stage-model`: Lake refused or could not be reached after retries |
+
+`serve` exits only when it cannot serve: 2 (no staged model), 3 (the sandbox check refused; the code
+was not imported) or 1 (the manifest, the import, the interface or the artifact failed). It prints
+the findings as one JSON line on stderr, which the operator reads as the container's termination
+message.
 
 `run` always writes `result.json` and `log.txt`, whatever its exit code.
 
@@ -79,9 +86,11 @@ Sent once:
  "log": "…last 64 KiB of the code's output…"}
 ```
 
-- `artifact_base64` is present only when `/work/out/artifact.bin` exists and `result.status` is
-  `ok` (a `train` run; `validate` keeps none). An artifact over 32 MiB is not sent: collect marks
-  the result failed with the finding `run.artifact_size`.
+- The artifact is sent only when `/work/out/artifact.bin` exists and `result.status` is `ok` (a
+  `train` run; `validate` keeps none). Up to **24 MiB** it is inline, `artifact_base64`. Larger, up
+  to **1 GiB**, it goes first in chunks (below) and the output carries
+  `"artifact": {"bytes": N, "sha256": "<64 hex>"}` instead. An artifact over 1 GiB is not sent:
+  collect marks the result failed with the finding `run.artifact_size`.
 - When the run pod left no `result.json` (stopped, out of memory, past its deadline, or exited
   early), collect sends a failed result with the single finding `run.result` and, when the operator
   passes `--run-exit-code`, that code in the message and in `result.exit_code`.
@@ -91,6 +100,61 @@ Sent once:
   containing "already".
 
 Answer (`value`): `{"recorded": true, "model_id": "…" | null}`.
+
+### `methodology_run_artifact` (collect, an artifact over 24 MiB; lake#690)
+
+Sent in order before the output, 8 MiB of the artifact at a time:
+
+```json
+{"run_id": "<uuid>", "offset": 0, "chunk_base64": "…"}
+```
+
+Answer (`value`): `{"received": N}`, the bytes Lake now holds. A chunk at an offset below
+`received` replaces what Lake held from there (a collect run again starts over safely); an offset
+past it is a `conflict`. Collect fails when `received` is not the end of the chunk it sent. Lake
+checks the total and the SHA-256 the output names before it records anything.
+
+### `methodology_deployment_input` (stage-model; lake#690)
+
+With the deployment's credential `lmd.<deployment id>.<secret>`, repeated with each answer's
+`next_offset` until it is `null`:
+
+```json
+{"deployment_id": "<uuid>", "offset": 0, "limit": 8388608}
+```
+
+Answer (`value`):
+
+```json
+{"spec": {"interface": 1, "deployment_id": "…", "model_id": "…", "methodology_id": "W-…",
+          "artifact_format": "pickle|bytes", "features": ["tenure"], "network": false,
+          "manifest": {}},
+ "chunk_base64": "…", "offset": 0, "next_offset": 8388608,
+ "total_bytes": 12000000, "sha256": "<64 hex>"}
+```
+
+`stage-model` writes `artifact.bin.partial`, checks the total and the SHA-256, and only then renames
+it to `/work/model/artifact.bin` and writes `/work/model/spec.json`.
+
+## `methodology serve` (lake#690)
+
+The serve pod runs the methodology's own image with the model volume read-only at `/work/model`.
+Before importing anything of the methodology it makes the run pod's sandbox checks
+(`sandbox.credentials`, and `sandbox.network` unless the spec grants network); then it checks the
+manifest and interface, loads the artifact (`pickle` is unpickled, `bytes` handed over as bytes),
+and listens on `--port` (8080):
+
+| Request | Answer |
+|---|---|
+| `GET /healthz` | `{"ready": true, "model_id", "methodology_id", "explain"}`: the readiness probe |
+| `POST /predict {"rows": [{...}]}` | `{"predictions": [...], "model_id"}`, one per row, from `predict(artifact, data)` |
+| `POST /explain {"rows": [{...}]}` | `{"explanations": [...]}`, when the manifest declares `explain` |
+
+`data` is a `Data` with the model's features and no target. At most 10,000 rows and 32 MiB per
+request. A refusal is `{"error": {"code", "message"}}`: 400 `invalid_input`, 411, 413 `too_large`,
+404 `not_found`/`not_supported`, or 422 `methodology_error` when the code raised. The code is called
+one request at a time. Each request logs one line (method, path, status), never the rows. Only
+Lake's pods can reach it (the operator's NetworkPolicy); Lake meters and authorizes every call.
 
 ## A methodology's image
 
