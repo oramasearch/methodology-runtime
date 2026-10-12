@@ -1,4 +1,4 @@
-"""The `methodology` command: stage, run, collect, validate-manifest, install-locked."""
+"""The `methodology` command: stage, run, collect, stage-model, serve, validate-manifest, install-locked."""
 
 from __future__ import annotations
 
@@ -13,7 +13,18 @@ from . import __version__
 from .findings import all_ok
 from .harness import RunOptions, run
 from .manifest import DEFAULT_PACKAGES, check_lock, check_manifest
-from .transfer import EXIT_OK, EXIT_TRANSFER, LakeClient, TransferError, collect, read_credential, stage
+from .serve import serve
+from .transfer import (
+    ARTIFACT_CHUNK_BYTES,
+    EXIT_OK,
+    EXIT_TRANSFER,
+    LakeClient,
+    TransferError,
+    collect,
+    read_credential,
+    stage,
+    stage_model,
+)
 
 EXIT_INVALID = 1
 EXIT_USAGE = 2
@@ -41,6 +52,28 @@ def command_collect(arguments: argparse.Namespace) -> int:
         return EXIT_TRANSFER
     print(json.dumps({"collected": True, "model_id": answer.get("model_id")}))
     return EXIT_OK
+
+
+def command_stage_model(arguments: argparse.Namespace) -> int:
+    try:
+        client = LakeClient(arguments.lake, read_credential(Path(arguments.credential_file)))
+        summary = stage_model(client, arguments.deployment, Path(arguments.out), arguments.limit)
+    except (TransferError, OSError) as error:
+        print(f"stage-model failed: {error}", file=sys.stderr)
+        return EXIT_TRANSFER
+    print(json.dumps({"staged": True, **summary}))
+    return EXIT_OK
+
+
+def command_serve(arguments: argparse.Namespace) -> int:
+    return serve(
+        Path(arguments.model),
+        Path(arguments.source),
+        arguments.host,
+        arguments.port,
+        dict(os.environ),
+        os.path.exists,
+    )
 
 
 def command_run(arguments: argparse.Namespace) -> int:
@@ -136,6 +169,22 @@ def parser() -> argparse.ArgumentParser:
     collected.add_argument("--run-exit-code", type=int, default=None,
                            help="the run pod's exit code, reported when it left no result.json")
     collected.set_defaults(handler=command_collect)
+
+    staged_model = commands.add_parser("stage-model", help="page a model deployment's artifact from Lake")
+    staged_model.add_argument("--lake", default=os.environ.get("LAKE_URL"), required="LAKE_URL" not in os.environ)
+    staged_model.add_argument("--deployment", default=os.environ.get("DEPLOYMENT_ID"),
+                              required="DEPLOYMENT_ID" not in os.environ)
+    staged_model.add_argument("--credential-file", default="/var/run/orama/credential")
+    staged_model.add_argument("--out", default="/work/model")
+    staged_model.add_argument("--limit", type=int, default=ARTIFACT_CHUNK_BYTES)
+    staged_model.set_defaults(handler=command_stage_model)
+
+    served = commands.add_parser("serve", help="answer predictions from the staged model (the sandbox)")
+    served.add_argument("--model", default="/work/model")
+    served.add_argument("--source", default="/methodology")
+    served.add_argument("--host", default="0.0.0.0")
+    served.add_argument("--port", type=int, default=8080)
+    served.set_defaults(handler=command_serve)
 
     validate = commands.add_parser("validate-manifest", help="check a methodology directory locally")
     validate.add_argument("directory", nargs="?", default=".")

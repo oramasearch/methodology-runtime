@@ -11,6 +11,13 @@ namespace with a credential:
 | run | the methodology's image (FROM this one) | none | none, unless the person granted it | `methodology run` reads `/work/in`, writes `/work/out` |
 | collect | this image, unchanged | the same run credential | Lake's Service only | `methodology collect` posts `/work/out` |
 
+A **model deployment** (lake#690) is the same split: a `stage-model` Job (this image, with the
+deployment's credential `lmd.<deployment id>.<secret>`, Lake's Service only) writes the model to a
+volume, and a long-running **serve** pod (the methodology's image, `methodology serve`) mounts it
+read-only with no credential and no network unless granted. The serve pod accepts connections
+from Lake's pods only, on its port; it opens none of its own. It makes the same checks below
+before importing the code.
+
 The stage and collect pods run the pristine runtime image, never the methodology's own image, so
 the code that handles the credential is never code the methodology could replace.
 
