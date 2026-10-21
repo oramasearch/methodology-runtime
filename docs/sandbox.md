@@ -21,6 +21,24 @@ before importing the code.
 The stage and collect pods run the pristine runtime image, never the methodology's own image, so
 the code that handles the credential is never code the methodology could replace.
 
+## Nothing the run pod writes runs in a credential pod
+
+`/work` is shared, so stage, collect and stage-model treat it as written by the untrusted code:
+
+- **No module is imported from it** (methodology-runtime#4). The image's working directory is
+  `/work`, and `python3 -m` would put the working directory first on `sys.path`, so a planted
+  `/work/orama_methodology/` or `/work/json.py` would run next to the credential. The command starts
+  Python with `-P` (the image also sets `PYTHONSAFEPATH=1`), and the package drops the working
+  directory and anything under `/work` from `sys.path` before importing anything else. The operator
+  also starts these pods in their own `/tmp` with `PYTHONSAFEPATH=1`
+  ([orama-operator#821](https://github.com/oramasearch/orama-operator/pull/821)); the runtime does not
+  depend on it.
+- **Its files are read as data, and only regular files** (methodology-runtime#5). Collect opens
+  `/work/out` and each output file without following symbolic links and checks the opened file is a
+  regular file, so a link to `/var/run/orama/credential` is refused with the finding
+  `run.output_file` instead of being uploaded as the log or the model. A hard link cannot reach the
+  credential: it is on a different filesystem from the work volume.
+
 ## What the run pod may see
 
 - `/work/in/spec.json` and `/work/in/data.jsonl` (read-only), `/work/out` (writable), `/tmp`;
@@ -58,6 +76,10 @@ are bounded) and records it as the methodology's own report.
 - `python3 -m unittest tests.test_harness.SandboxRefusalTests tests.test_sandbox` — a credential
   variable, a token file and an ungranted network each refuse the run before the code is imported
   (a canary file the code would write stays absent); a granted network is not probed.
+- `python3 -m unittest tests.test_safe_path tests.test_transfer.SymbolicLinkTests` — modules planted in
+  the working directory (`orama_methodology/`, `json.py`, `dataclasses.py`, …) are not imported by
+  the command, stage or collect, and collect reads no symbolic link, named pipe or linked output
+  directory.
 - `tools/sandbox-smoke.sh` — with a container runtime: the example runs with `--network none`, no
   environment, a read-only root, no capabilities and uid 10001; the same image refuses
   `-e LAKE_TOKEN=…` and a run with network it was not granted (exit 3).
