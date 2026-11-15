@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """The interface a Lake workspace methodology implements, and the harness that runs it.
 
 A methodology is a directory holding `methodology.json` (the manifest), an entrypoint module

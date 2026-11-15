@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """The data object a methodology's functions receive."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 # oramasearch/methodology-runtime: the sandbox runtime for a Lake workspace's own methodologies.
 #
 # The stage and collect pods run this image as it is; a methodology's own image is built FROM it

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Shared helpers: the examples, a synthetic dataset and a staged /work directory."""
 
 import json

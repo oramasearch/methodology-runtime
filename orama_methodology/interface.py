@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Check that a loaded entrypoint module implements the interface its manifest declares."""
 
 from __future__ import annotations

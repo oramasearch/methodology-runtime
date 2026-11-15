@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+
 # Smoke-test a locally built runtime image the way the run pod uses it, with no registry involved:
 # build the example methodology's image FROM it, stage a bundle, run it with no network, no
 # environment, a read-only root and no capabilities, and show the sandbox refusing a credential and
