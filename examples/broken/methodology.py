@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """A broken example: it has fit and predict but no score."""
 
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 # A methodology's own image: what Lake's build path generates for a workspace methodology
 # (Lake passes the runtime image as the METHODOLOGY_RUNTIME_IMAGE build argument and builds from
 # the methodology's directory in its repository). The locked packages are installed at build time,

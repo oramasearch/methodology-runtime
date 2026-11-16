@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """`methodology stage` and `methodology collect`: the only way data enters and leaves a run.
 
 Both run in the pristine runtime image, never in the methodology's own image, with the run's

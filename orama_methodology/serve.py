@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """`methodology serve`: answer predictions from a trained model, inside the sandbox (lake#690).
 
 The serve pod runs the methodology's own image with no credential and no network unless the person

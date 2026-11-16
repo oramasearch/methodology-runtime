@@ -42,3 +42,10 @@ and collect pods; Lake serves `methodology_run_input` and `methodology_run_outpu
 result in the workspace Zetta.
 
 The image is `oramasearch/methodology-runtime` on Docker Hub.
+Private repository; the Docker Hub repository `oramasearch/methodology-runtime` is private.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party components and their licenses are in
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Contributions are welcome under the
+[Contributor License Agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
