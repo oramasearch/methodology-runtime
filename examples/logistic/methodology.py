@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Logistic regression with the standard library: an example workspace methodology.
 
 Numeric features are standardized; anything that is not a number counts as 0 after scaling. The

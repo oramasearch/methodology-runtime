@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """`methodology run`: run a methodology on the data bundle, inside the sandbox.
 
 Reads /work/in (spec.json, data.jsonl), writes /work/out (result.json, artifact.bin, log.txt).

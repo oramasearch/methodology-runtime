@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: MIT
+
 import base64
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -131,6 +134,81 @@ class CollectTests(unittest.TestCase):
             self.assertNotIn("artifact_base64", body)
             self.assertEqual(body["result"]["status"], "failed")
             self.assertEqual(body["result"]["findings"][-1]["check"], "run.artifact_size")
+
+
+class SymbolicLinkTests(unittest.TestCase):
+    """Collect reads only regular files the run left in its output directory, never what a symbolic
+    link the sandbox planted points at (methodology-runtime#5)."""
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        root = Path(self._directory.name)
+        # Stands in for a file of the collect pod, such as /var/run/orama/credential.
+        self.secret = root / "credential"
+        self.secret.write_text('{"status": "ok", "secret": "lmr.run.s3cret"}')
+        self.out = root / "out"
+        self.out.mkdir()
+
+    def _result(self, status: str = "ok") -> None:
+        (self.out / "result.json").write_text(json.dumps({"status": status, "findings": [], "metrics": {}}))
+
+    def _refusals(self, body: dict) -> list:
+        return [f for f in body["result"]["findings"] if f["check"] == "run.output_file"]
+
+    def test_a_linked_log_is_not_read(self):
+        self._result()
+        (self.out / "log.txt").symlink_to(self.secret)
+        body = output_body(SPEC["run_id"], self.out)
+        self.assertNotIn("log", body)
+        self.assertNotIn("s3cret", json.dumps(body))
+        self.assertIn("log.txt", self._refusals(body)[0]["message"])
+
+    def test_a_linked_artifact_is_not_sent_and_fails_the_run(self):
+        self._result()
+        (self.out / "artifact.bin").symlink_to(self.secret)
+        body = output_body(SPEC["run_id"], self.out)
+        self.assertNotIn("artifact_base64", body)
+        self.assertNotIn("artifact", body)
+        self.assertNotIn("s3cret", json.dumps(body))
+        self.assertEqual(body["result"]["status"], "failed")
+        self.assertIn("artifact.bin", self._refusals(body)[0]["message"])
+
+    def test_a_linked_result_is_not_read(self):
+        (self.out / "result.json").symlink_to(self.secret)
+        body = output_body(SPEC["run_id"], self.out)
+        self.assertNotIn("s3cret", json.dumps(body))
+        self.assertEqual(body["result"]["status"], "failed")
+        self.assertIn("result.json", self._refusals(body)[0]["message"])
+
+    def test_an_output_directory_that_is_a_link_is_refused(self):
+        elsewhere = Path(self._directory.name) / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "result.json").write_text(json.dumps({"status": "ok", "findings": [], "metrics": {}}))
+        (elsewhere / "log.txt").write_text("lmr.run.s3cret")
+        linked = Path(self._directory.name) / "linked-out"
+        linked.symlink_to(elsewhere)
+        body = output_body(SPEC["run_id"], linked)
+        self.assertNotIn("s3cret", json.dumps(body))
+        self.assertEqual(body["result"]["status"], "failed")
+        self.assertTrue(self._refusals(body))
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs named pipes")
+    def test_a_named_pipe_does_not_hang_collect(self):
+        self._result()
+        os.mkfifo(self.out / "log.txt")
+        body = output_body(SPEC["run_id"], self.out)
+        self.assertNotIn("log", body)
+        self.assertIn("not a regular file", self._refusals(body)[0]["message"])
+
+    def test_collect_sends_a_large_artifact_from_the_file_it_checked(self):
+        artifact = bytes(range(256)) * 8
+        self._result()
+        (self.out / "artifact.bin").write_bytes(artifact)
+        with mock.patch.object(transfer, "INLINE_ARTIFACT_BYTES", 100), \
+                FakeLake(SPEC, []) as lake:
+            collect(LakeClient(lake.url, CREDENTIAL, no_sleep), SPEC["run_id"], self.out)
+            self.assertEqual(bytes(lake.artifact), artifact)
 
 
 class ChunkedArtifactTests(unittest.TestCase):

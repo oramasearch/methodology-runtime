@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Check a methodology's manifest (`methodology.json`) and its lock file (interface 1).
 
 Every check reports a Finding; nothing raises for a bad manifest, so a person sees every missing

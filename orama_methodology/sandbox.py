@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """What the run container must not see, checked before any methodology code is imported.
 
 The operator builds the run pod so none of this is there (no credential, no service account token,

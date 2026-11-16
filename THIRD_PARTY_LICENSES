@@ -1,0 +1,24 @@
+Third-party software in methodology-runtime
+
+methodology-runtime is licensed under the MIT License (see LICENSE). It includes or uses the components
+below, each under its own license. This file is generated; do not edit it by hand.
+Generated with: a review of pyproject.toml (no runtime dependencies) and the Dockerfile
+From: pyproject.toml and the Dockerfile
+
+Summary
+
+No third-party Python package: the code uses the Python standard library only.
+
+Container base image
+
+The image is built FROM the official Docker image python:3.12.12-slim-bookworm, pinned by digest (https://hub.docker.com/_/python),
+which is Debian bookworm plus CPython. CPython is under the Python Software Foundation
+License (PSF-2.0, https://docs.python.org/3/license.html). The Debian packages in it keep their own
+licenses, recorded in the image at /usr/share/doc/*/copyright; some are GPL or LGPL, which permits
+redistributing the image when their source is available (Debian publishes it at
+https://sources.debian.org/). The image is not part of this repository's source; it is pulled at
+build time.
+
+Methodologies the runtime installs (from a methodology's own locked requirements, for example
+examples/*/requirements.lock) are the methodology author's dependencies, installed at run time;
+they are not part of this repository.

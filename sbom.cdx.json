@@ -1,0 +1,61 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.7.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.7",
+  "serialNumber": "urn:uuid:c0e5ea1b-1cc6-527e-a763-db825c7222bc",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-16T07:23:58Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "tools/sbom.py"
+        },
+        {
+          "type": "application",
+          "name": "syft"
+        }
+      ]
+    },
+    "supplier": {
+      "name": "OramaSearch, Inc."
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "DocumentRoot",
+      "type": "library",
+      "name": "methodology-runtime",
+      "version": "v0.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:docker/python@sha256%3A593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c?package-id=Image-python-19ed14e62ff57101&tag=3.12.12-slim-bookworm",
+      "type": "library",
+      "name": "python",
+      "version": "3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c",
+      "purl": "pkg:docker/python@sha256%3A593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c?tag=3.12.12-slim-bookworm",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "UnknownPackage"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "DocumentRoot",
+      "dependsOn": [
+        "pkg:docker/python@sha256%3A593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c?package-id=Image-python-19ed14e62ff57101&tag=3.12.12-slim-bookworm"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """A standard-library fake of Lake's two runner capabilities, for the transfer tests."""
 
 import base64

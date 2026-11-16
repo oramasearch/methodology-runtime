@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """One finding: a named check, whether it passed, and what to do about it."""
 
 from dataclasses import dataclass

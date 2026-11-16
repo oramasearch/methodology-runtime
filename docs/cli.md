@@ -2,7 +2,11 @@
 
 In the image: `/opt/orama/bin/methodology` (the entrypoint) and `/opt/orama/bin/install-locked`;
 the package is `/opt/orama/lib/orama_methodology`. The command sets `PYTHONPATH=/opt/orama/lib`
-itself and runs `python3 -s`, so neither an inherited `PYTHONPATH` nor user site-packages are used.
+itself and runs `python3 -P -s`, so neither an inherited `PYTHONPATH` nor user site-packages are used,
+and the working directory is never on `sys.path` (the image starts in `/work`, which the run pod
+writes; methodology-runtime#4). The image also sets `PYTHONSAFEPATH=1`, and the package removes the
+working directory and anything under `/work` from `sys.path` before it imports anything else, for a
+launcher that forgets `-P`.
 `run` adds `/methodology` and `/methodology/.packages` to `sys.path` only for the methodology's
 import. The image runs as uid 10001, working directory `/work`.
 
@@ -95,6 +99,12 @@ Sent once:
   early), collect sends a failed result with the single finding `run.result` and, when the operator
   passes `--run-exit-code`, that code in the message and in `result.exit_code`.
 - `exit_code` is added to the result whenever `--run-exit-code` is given.
+- Collect reads `/work/out` only as data, never imports anything from it, and reads only regular
+  files: the directory and each of `result.json`, `artifact.bin` and `log.txt` are opened without
+  following symbolic links, and checked with `fstat` on the opened file (methodology-runtime#5). A
+  symbolic link, named pipe or device is not read and adds the finding `run.output_file`; a refused
+  `artifact.bin` also fails the result (`error: "artifact refused"`), and a refused `result.json` or
+  output directory is reported like a missing result.
 - A `409 conflict` whose message says the output is **already** recorded is treated as success (a
   retry after a lost answer), so Lake must answer a second output with `conflict` and a message
   containing "already".

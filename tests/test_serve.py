@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """`methodology serve`: the sandbox checks first, then predictions over HTTP (lake#690)."""
 
 import json

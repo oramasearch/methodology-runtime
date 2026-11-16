@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """The `methodology` command: stage, run, collect, stage-model, serve, validate-manifest, install-locked."""
 
 from __future__ import annotations

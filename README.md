@@ -1,7 +1,7 @@
 # methodology-runtime
 
 The sandbox runtime for a Lake workspace's own methodologies
-([lake#655](https://github.com/oramasearch/lake/issues/655)). A workspace methodology is Python
+(lake#655). A workspace methodology is Python
 code in one of the workspace's repositories; this repository holds:
 
 - `orama_methodology/` — the interface a methodology implements (`fit`, `predict`, `score`,
@@ -10,7 +10,7 @@ code in one of the workspace's repositories; this repository holds:
 - `bin/methodology` — the command the three run pods use: `stage`, `run`, `collect`; a model
   deployment's `stage-model` and `serve` (lake#690); plus `validate-manifest` for local use and
   `install-locked` for image builds;
-- `Dockerfile` — the private image `oramasearch/methodology-runtime` (Python 3.12 pinned by
+- `Dockerfile` — the image `oramasearch/methodology-runtime` (Python 3.12 pinned by
   digest, non-root uid 10001, standard library only);
 - `templates/methodology.Dockerfile` — the image Lake builds for each methodology, FROM this one;
 - `examples/` — a working standard-library logistic regression and a broken example.
@@ -37,8 +37,17 @@ A model a training run produced is served by the same image in `serve` mode (`or
 lake#690): Ship → Models in Lake asks the operator for a deployment, and predictions go through Lake.
 
 Who runs it: the Orama operator
-([orama-operator#291](https://github.com/oramasearch/orama-operator/issues/291)) runs the stage, run
+(orama-operator#291) runs the stage, run
 and collect pods; Lake serves `methodology_run_input` and `methodology_run_output` and records the
 result in the workspace Zetta.
 
+Released: [v0.1.0](docs/releases/v0.1.0.md) ([all releases](docs/releases/README.md)).
+
+The image is `oramasearch/methodology-runtime` on Docker Hub.
 Private repository; the Docker Hub repository `oramasearch/methodology-runtime` is private.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party components and their licenses are in
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Contributions are welcome under the
+[Contributor License Agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
