@@ -1,7 +1,7 @@
 # The sandbox
 
 A workspace methodology is code Orama did not write, so it runs as untrusted code. The Orama
-operator ([orama-operator#291](https://github.com/oramasearch/orama-operator/issues/291)) runs each
+operator (orama-operator#291) runs each
 run as three pods sharing one volume (`/work`), so the untrusted code never shares a network
 namespace with a credential:
 
