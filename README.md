@@ -41,6 +41,8 @@ Who runs it: the Orama operator
 and collect pods; Lake serves `methodology_run_input` and `methodology_run_output` and records the
 result in the workspace Zetta.
 
+Released: [v0.1.0](docs/releases/v0.1.0.md) ([all releases](docs/releases/README.md)).
+
 The image is `oramasearch/methodology-runtime` on Docker Hub.
 Private repository; the Docker Hub repository `oramasearch/methodology-runtime` is private.
 
