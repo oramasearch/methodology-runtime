@@ -2,17 +2,17 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "methodology-runtime-2c8c51173ef4",
-  "documentNamespace": "https://github.com/oramasearch/methodology-runtime/sbom/2c8c51173ef479b832813d2342e90c6d9ddce0f7",
+  "name": "methodology-runtime-be4b9e13ebf8",
+  "documentNamespace": "https://github.com/oramasearch/methodology-runtime/sbom/be4b9e13ebf88159777ccf7a10d8a5153cf65a1a",
   "creationInfo": {
-    "created": "2026-11-16T01:55:34Z",
+    "created": "2026-11-16T06:27:31Z",
     "creators": [
       "Organization: OramaSearch, Inc.",
       "Tool: tools/sbom.py",
       "Tool: syft"
     ],
     "licenseListVersion": "3.29",
-    "comment": "Made from source commit 2c8c51173ef479b832813d2342e90c6d9ddce0f7 by tools/sbom.py."
+    "comment": "Made from source commit be4b9e13ebf88159777ccf7a10d8a5153cf65a1a by tools/sbom.py."
   },
   "documentDescribes": [
     "SPDXRef-DocumentRoot"
@@ -21,7 +21,7 @@
     {
       "name": "methodology-runtime",
       "SPDXID": "SPDXRef-DocumentRoot",
-      "versionInfo": "2c8c51173ef4",
+      "versionInfo": "be4b9e13ebf8",
       "downloadLocation": "git+https://github.com/oramasearch/methodology-runtime.git",
       "homepage": "https://github.com/oramasearch/methodology-runtime",
       "filesAnalyzed": false,
