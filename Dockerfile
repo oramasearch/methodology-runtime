@@ -11,9 +11,12 @@ LABEL org.opencontainers.image.title="methodology-runtime" \
       org.opencontainers.image.source="https://github.com/oramasearch/methodology-runtime" \
       org.opencontainers.image.description="Sandbox runtime for Lake workspace methodologies"
 
+# PYTHONSAFEPATH keeps the working directory (/work, which the run pod writes) off sys.path for any
+# python3 started in the image; bin/methodology also passes -P (methodology-runtime#4).
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=0 \
+    PYTHONSAFEPATH=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_INPUT=1 \
     PATH=/opt/orama/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin

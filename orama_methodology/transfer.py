@@ -22,11 +22,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import stat
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 
 from . import USER_AGENT
 
@@ -198,85 +200,190 @@ def missing_result(exit_code: int | None) -> dict[str, Any]:
     }
 
 
-def output_body(run_id: str, in_dir: Path, exit_code: int | None = None) -> dict[str, Any]:
-    """The body collect posts: the result, the artifact when there is one, the log's tail."""
-    in_dir = Path(in_dir)
-    try:
-        result = json.loads((in_dir / "result.json").read_text(encoding="utf-8"))
-        if not isinstance(result, dict):
-            raise ValueError("not an object")
-    except (OSError, ValueError):
+class RunOutputs:
+    """The run's output directory, opened once without following symbolic links (methodology-runtime#5).
+
+    Everything in it was written by code that is not trusted, so collect reads it only as data:
+    never imported, and only regular files named by the contract. The directory itself and each file
+    are opened with O_NOFOLLOW (each file relative to the opened directory), and a file is used only
+    when fstat on the opened descriptor says it is a regular file. A symbolic link (to the run's
+    credential, say), a named pipe or a device is refused with a `run.output_file` finding.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = Path(directory)
+        self.refusals: list[dict[str, Any]] = []
+        self.refused: set[str] = set()
+        self._fd: int | None = None
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        try:
+            self._fd = os.open(self.directory, flags)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            self._refuse(f"the output directory {self.directory} is a symbolic link or not a directory; "
+                         "collect read nothing from it")
+
+    def _refuse(self, message: str) -> None:
+        self.refusals.append({"check": "run.output_file", "ok": False, "message": message})
+
+    def open(self, name: str) -> BinaryIO | None:
+        """`name` opened for reading when it is a regular file in the directory; None when it is
+        absent or refused (the refusal is recorded)."""
+        if self._fd is None:
+            return None
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            fd = os.open(name, flags, dir_fd=self._fd)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            self.refused.add(name)
+            self._refuse(f"{name} in the run's output is a symbolic link or cannot be opened; collect did not read it")
+            return None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                self.refused.add(name)
+                self._refuse(f"{name} in the run's output is not a regular file; collect did not read it")
+                os.close(fd)
+                return None
+            return os.fdopen(fd, "rb")
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def close(self) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+            self._fd = None
+
+    def __enter__(self) -> "RunOutputs":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+
+def _add_findings(result: dict[str, Any], findings: list[dict[str, Any]]) -> None:
+    existing = result.get("findings")
+    if not isinstance(existing, list):
+        existing = []
+    result["findings"] = existing + findings
+
+
+def _output_body(
+    run_id: str, outputs: RunOutputs, exit_code: int | None
+) -> tuple[dict[str, Any], BinaryIO | None]:
+    """The body collect posts, and the artifact's open file when it is to be sent in chunks."""
+    result: Any = None
+    handle = outputs.open("result.json")
+    if handle is not None:
+        with handle:
+            try:
+                result = json.loads(handle.read().decode("utf-8"))
+            except ValueError:
+                result = None
+    if not isinstance(result, dict):
         result = missing_result(exit_code)
     if exit_code is not None:
         result["exit_code"] = exit_code
     body: dict[str, Any] = {"run_id": run_id, "result": result}
-    artifact = in_dir / "artifact.bin"
-    if artifact.is_file() and result.get("status") == "ok":
-        size = artifact.stat().st_size
-        if size > MAX_ARTIFACT_BYTES:
+    chunked: BinaryIO | None = None
+    if result.get("status") == "ok":
+        artifact = outputs.open("artifact.bin")
+        if artifact is None and "artifact.bin" in outputs.refused:
             result["status"] = "failed"
-            result.setdefault("findings", []).append(
-                {
+            result["error"] = "artifact refused"
+        elif artifact is not None:
+            size = os.fstat(artifact.fileno()).st_size
+            if size > MAX_ARTIFACT_BYTES:
+                artifact.close()
+                result["status"] = "failed"
+                _add_findings(result, [{
                     "check": "run.artifact_size",
                     "ok": False,
                     "message": f"the artifact is {size} bytes; Lake accepts at most {MAX_ARTIFACT_BYTES}",
-                }
-            )
-            result["error"] = "artifact too large"
-        elif size > INLINE_ARTIFACT_BYTES:
-            # Sent in chunks before the output (collect does it); the output names what was sent.
-            body["artifact"] = {"bytes": size, "sha256": file_sha256(artifact)}
-        else:
-            body["artifact_base64"] = base64.b64encode(artifact.read_bytes()).decode("ascii")
-    log = in_dir / "log.txt"
-    if log.is_file():
-        tail = log.read_bytes()[-LOG_TAIL_BYTES:]
-        body["log"] = tail.decode("utf-8", "replace")
-    return body
+                }])
+                result["error"] = "artifact too large"
+            elif size > INLINE_ARTIFACT_BYTES:
+                # Sent in chunks before the output (collect does it); the output names what was sent.
+                body["artifact"] = {"bytes": size, "sha256": file_sha256(artifact)}
+                chunked = artifact
+            else:
+                with artifact:
+                    body["artifact_base64"] = base64.b64encode(artifact.read()).decode("ascii")
+    log = outputs.open("log.txt")
+    if log is not None:
+        with log:
+            size = os.fstat(log.fileno()).st_size
+            log.seek(max(0, size - LOG_TAIL_BYTES))
+            body["log"] = log.read(LOG_TAIL_BYTES).decode("utf-8", "replace")
+    if outputs.refusals:
+        _add_findings(result, list(outputs.refusals))
+    return body, chunked
 
 
-def file_sha256(path: Path) -> str:
+def output_body(run_id: str, in_dir: Path, exit_code: int | None = None) -> dict[str, Any]:
+    """The body collect posts: the result, the artifact when there is one, the log's tail."""
+    with RunOutputs(in_dir) as outputs:
+        body, chunked = _output_body(run_id, outputs, exit_code)
+        if chunked is not None:
+            chunked.close()
+        return body
+
+
+def file_sha256(source: Path | BinaryIO) -> str:
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
+    if isinstance(source, (str, os.PathLike)):
+        with open(source, "rb") as handle:
+            return file_sha256(handle)
+    source.seek(0)
+    for block in iter(lambda: source.read(1024 * 1024), b""):
+        digest.update(block)
     return digest.hexdigest()
 
 
-def send_artifact(client: LakeClient, run_id: str, path: Path, chunk_bytes: int | None = None) -> int:
+def send_artifact(client: LakeClient, run_id: str, source: Path | BinaryIO, chunk_bytes: int | None = None) -> int:
     """Send a large artifact in order, `chunk_bytes` at a time. Lake answers how many bytes it holds
     (`received`); a resent chunk replaces what it held from that offset, so a collect that is run
-    again starts over safely. Returns the bytes sent."""
+    again starts over safely. Returns the bytes sent. `source` is the file collect already opened
+    and checked (or a path, for a caller that has none)."""
+    if isinstance(source, (str, os.PathLike)):
+        with open(source, "rb") as handle:
+            return send_artifact(client, run_id, handle, chunk_bytes)
     chunk_bytes = chunk_bytes or ARTIFACT_CHUNK_BYTES
-    size = Path(path).stat().st_size
+    size = os.fstat(source.fileno()).st_size
     offset = 0
-    with open(path, "rb") as handle:
-        while offset < size:
-            handle.seek(offset)
-            chunk = handle.read(chunk_bytes)
-            answer = client.call(
-                "methodology_run_artifact",
-                {"run_id": run_id, "offset": offset, "chunk_base64": base64.b64encode(chunk).decode("ascii")},
+    while offset < size:
+        source.seek(offset)
+        chunk = source.read(chunk_bytes)
+        answer = client.call(
+            "methodology_run_artifact",
+            {"run_id": run_id, "offset": offset, "chunk_base64": base64.b64encode(chunk).decode("ascii")},
+        )
+        received = answer.get("received")
+        if not isinstance(received, int) or received != offset + len(chunk):
+            raise TransferError(
+                f"methodology_run_artifact answered received {received!r} after a chunk at {offset} "
+                f"of {len(chunk)} bytes"
             )
-            received = answer.get("received")
-            if not isinstance(received, int) or received != offset + len(chunk):
-                raise TransferError(
-                    f"methodology_run_artifact answered received {received!r} after a chunk at {offset} "
-                    f"of {len(chunk)} bytes"
-                )
-            offset = received
+        offset = received
     return offset
 
 
 def collect(client: LakeClient, run_id: str, in_dir: Path, exit_code: int | None = None) -> dict[str, Any]:
-    body = output_body(run_id, in_dir, exit_code)
-    if "artifact" in body:
-        try:
-            send_artifact(client, run_id, Path(in_dir) / "artifact.bin")
-        except TransferError as error:
-            # Already recorded by an earlier collect: the output call below says so.
-            if not (error.code == "conflict" and "already" in str(error)):
-                raise
+    """Post the run's output. The run's files are read only as data, through RunOutputs; nothing in
+    the output directory is ever imported or executed."""
+    with RunOutputs(in_dir) as outputs:
+        body, chunked = _output_body(run_id, outputs, exit_code)
+        if chunked is not None:
+            with chunked:
+                try:
+                    send_artifact(client, run_id, chunked)
+                except TransferError as error:
+                    # Already recorded by an earlier collect: the output call below says so.
+                    if not (error.code == "conflict" and "already" in str(error)):
+                        raise
     try:
         return client.call("methodology_run_output", body)
     except TransferError as error:
