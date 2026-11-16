@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Stage and collect never import a module the sandbox wrote (methodology-runtime#4).
 
 The run pod writes `/work`, and the image's working directory is `/work`. `python3 -m` puts the
